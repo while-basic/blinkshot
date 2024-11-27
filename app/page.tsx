@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useDebounce } from "@uidotdev/usehooks";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { Download } from "lucide-react";
 
 type ImageResponse = {
   b64_json: string;
@@ -62,6 +63,15 @@ export default function Home() {
 
   let activeImage =
     activeIndex !== undefined ? generations[activeIndex].image : undefined;
+
+  const handleDownload = (imageData: string, index: number) => {
+    const link = document.createElement('a');
+    link.href = `data:image/png;base64,${imageData}`;
+    link.download = `blinkshot-${index + 1}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="flex h-full flex-col px-5">
@@ -142,15 +152,24 @@ export default function Home() {
         ) : (
           <div className="mt-4 flex w-full max-w-4xl flex-col justify-center">
             <div>
-              <Image
-                placeholder="blur"
-                blurDataURL={imagePlaceholder.blurDataURL}
-                width={1024}
-                height={768}
-                src={`data:image/png;base64,${activeImage.b64_json}`}
-                alt=""
-                className={`${isFetching ? "animate-pulse" : ""} max-w-full rounded-lg object-cover shadow-sm shadow-black`}
-              />
+              <div className="relative">
+                <Image
+                  placeholder="blur"
+                  blurDataURL={imagePlaceholder.blurDataURL}
+                  width={1024}
+                  height={768}
+                  src={`data:image/png;base64,${activeImage.b64_json}`}
+                  alt=""
+                  className={`${isFetching ? "animate-pulse" : ""} max-w-full rounded-lg object-cover shadow-sm shadow-black`}
+                />
+                <Button
+                  onClick={() => handleDownload(activeImage.b64_json, activeIndex || 0)}
+                  className="absolute bottom-4 right-4 bg-gray-800/70 hover:bg-gray-700/70"
+                  size="icon"
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
             <div className="mt-4 flex gap-4 overflow-x-scroll pb-4">
