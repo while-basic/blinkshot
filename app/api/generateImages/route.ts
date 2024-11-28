@@ -17,13 +17,21 @@ if (process.env.UPSTASH_REDIS_REST_URL) {
   });
 }
 
+type ImageResponse = {
+  b64_json: string;
+  timings: { inference: number };
+  seed?: number;
+};
+
 export async function POST(req: Request) {
   let json = await req.json();
-  let { prompt, userAPIKey, iterativeMode } = z
+  let { prompt, userAPIKey, iterativeMode, steps, replayCount } = z
     .object({
       prompt: z.string(),
       iterativeMode: z.boolean(),
       userAPIKey: z.string().optional(),
+      steps: z.number().min(2).max(5).default(3),
+      replayCount: z.number().default(0),
     })
     .parse(json);
 
@@ -59,16 +67,20 @@ export async function POST(req: Request) {
 
   let response;
   try {
+    const seed = iterativeMode ? 123 + replayCount : undefined;
     response = await client.images.create({
       prompt,
       model: "black-forest-labs/FLUX.1-schnell",
       width: 1024,
       height: 768,
-      seed: iterativeMode ? 123 : undefined,
-      steps: 3,
+      seed,
+      steps,
       // @ts-expect-error - this is not typed in the API
       response_format: "base64",
     });
+
+    const responseData = response.data[0];
+    return Response.json({ ...responseData, seed });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (e: any) {
     return Response.json(
@@ -78,8 +90,6 @@ export async function POST(req: Request) {
       },
     );
   }
-
-  return Response.json(response.data[0]);
 }
 
 export const runtime = "edge";

@@ -23,9 +23,9 @@
 
 ## Future Tasks
 
-- [ ] Show a download button so people can get their images
+- [x] Show a download button so people can get their images
 - [ ] Add auth and rate limit by email instead of IP
 - [ ] Show people how many credits they have left
 - [ ] Build an image gallery of cool generations w/ their prompts
 - [ ] Add replay functionality so people can replay consistent generations
-- [ ] Add a setting to select between steps (2-5)
+- [x] Add a setting to select between steps (2-5)

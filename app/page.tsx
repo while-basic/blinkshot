@@ -13,33 +13,46 @@ import { useQuery } from "@tanstack/react-query";
 import { useDebounce } from "@uidotdev/usehooks";
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 
 type ImageResponse = {
   b64_json: string;
   timings: { inference: number };
+  seed?: number;
+};
+
+type Generation = {
+  prompt: string;
+  image: ImageResponse;
 };
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [iterativeMode, setIterativeMode] = useState(false);
   const [userAPIKey, setUserAPIKey] = useState("");
+  const [steps, setSteps] = useState(3);
+  const [isReplaying, setIsReplaying] = useState(false);
+  const [replayCount, setReplayCount] = useState(0);
   const debouncedPrompt = useDebounce(prompt, 300);
-  const [generations, setGenerations] = useState<
-    { prompt: string; image: ImageResponse }[]
-  >([]);
-  let [activeIndex, setActiveIndex] = useState<number>();
+  const [generations, setGenerations] = useState<Generation[]>([]);
+  let [activeIndex, setActiveIndex] = useState<number | undefined>();
 
-  const { data: image, isFetching } = useQuery({
+  const { data: image, isFetching, refetch } = useQuery({
     placeholderData: (previousData) => previousData,
-    queryKey: [debouncedPrompt],
+    queryKey: [debouncedPrompt, replayCount],
     queryFn: async () => {
       let res = await fetch("/api/generateImages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt, userAPIKey, iterativeMode }),
+        body: JSON.stringify({ 
+          prompt, 
+          userAPIKey, 
+          iterativeMode, 
+          steps,
+          replayCount 
+        }),
       });
 
       if (!res.ok) {
@@ -56,13 +69,22 @@ export default function Home() {
 
   useEffect(() => {
     if (image && !generations.map((g) => g.image).includes(image)) {
-      setGenerations((images) => [...images, { prompt, image }]);
-      setActiveIndex(generations.length);
+      setGenerations((prevGenerations) => {
+        const newGenerations = [...prevGenerations, { prompt, image }];
+        setActiveIndex(newGenerations.length - 1);
+        return newGenerations;
+      });
     }
   }, [generations, image, prompt]);
 
-  let activeImage =
-    activeIndex !== undefined ? generations[activeIndex].image : undefined;
+  const handleReplay = async () => {
+    if (!iterativeMode || !prompt) return;
+    
+    setIsReplaying(true);
+    setReplayCount(prev => prev + 1);
+    await refetch();
+    setIsReplaying(false);
+  };
 
   const handleDownload = (imageData: string, index: number) => {
     const link = document.createElement('a');
@@ -72,6 +94,10 @@ export default function Home() {
     link.click();
     document.body.removeChild(link);
   };
+
+  let activeImage = activeIndex !== undefined && activeIndex >= 0 && activeIndex < generations.length
+    ? generations[activeIndex].image
+    : undefined;
 
   return (
     <div className="flex h-full flex-col px-5">
@@ -122,7 +148,18 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-3 text-sm md:text-right">
+            <div className="mt-3 text-sm md:text-right flex items-center justify-end gap-6">
+              <label className="inline-flex items-center gap-2">
+                Steps (2-5)
+                <Input
+                  type="number"
+                  min={2}
+                  max={5}
+                  value={steps}
+                  onChange={(e) => setSteps(Math.min(5, Math.max(2, parseInt(e.target.value) || 2)))}
+                  className="w-16 bg-gray-400 text-gray-200 placeholder:text-gray-300"
+                />
+              </label>
               <label
                 title="Use earlier images as references"
                 className="inline-flex items-center gap-2"
@@ -130,9 +167,26 @@ export default function Home() {
                 Consistency mode
                 <Switch
                   checked={iterativeMode}
-                  onCheckedChange={setIterativeMode}
+                  onCheckedChange={(checked) => {
+                    setIterativeMode(checked);
+                    if (!checked) {
+                      setReplayCount(0);
+                    }
+                  }}
                 />
               </label>
+              {iterativeMode && prompt && (
+                <Button
+                  onClick={handleReplay}
+                  disabled={isReplaying}
+                  className="bg-white hover:bg-gray-100 text-gray-800"
+                  size="sm"
+                  title="Generate another consistent version"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${isReplaying ? 'animate-spin' : ''}`} />
+                  Regenerate ({replayCount})
+                </Button>
+              )}
             </div>
           </fieldset>
         </form>
@@ -158,17 +212,27 @@ export default function Home() {
                   blurDataURL={imagePlaceholder.blurDataURL}
                   width={1024}
                   height={768}
-                  src={`data:image/png;base64,${activeImage.b64_json}`}
+                  src={`data:image/png;base64,${activeImage?.b64_json || ''}`}
                   alt=""
                   className={`${isFetching ? "animate-pulse" : ""} max-w-full rounded-lg object-cover shadow-sm shadow-black`}
                 />
-                <Button
-                  onClick={() => handleDownload(activeImage.b64_json, activeIndex || 0)}
-                  className="absolute bottom-4 right-4 bg-gray-800/70 hover:bg-gray-700/70"
-                  size="icon"
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
+                {activeImage && (
+                  <>
+                    <Button
+                      onClick={() => handleDownload(activeImage.b64_json, activeIndex || 0)}
+                      className="absolute bottom-4 right-4 bg-white hover:bg-gray-100 text-gray-800 shadow-lg"
+                      size="icon"
+                      title="Download Image"
+                    >
+                      <Download className="h-5 w-5" />
+                    </Button>
+                    {iterativeMode && activeImage.seed !== undefined && (
+                      <div className="absolute top-4 right-4 bg-black/70 text-white px-3 py-1 rounded-full text-sm">
+                        Seed: {activeImage.seed}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
 
@@ -176,18 +240,25 @@ export default function Home() {
               {generations.map((generatedImage, i) => (
                 <button
                   key={i}
-                  className="w-32 shrink-0 opacity-50 hover:opacity-100"
+                  className={`w-32 shrink-0 transition-opacity ${i === activeIndex ? 'opacity-100' : 'opacity-50 hover:opacity-100'}`}
                   onClick={() => setActiveIndex(i)}
                 >
-                  <Image
-                    placeholder="blur"
-                    blurDataURL={imagePlaceholder.blurDataURL}
-                    width={1024}
-                    height={768}
-                    src={`data:image/png;base64,${generatedImage.image.b64_json}`}
-                    alt=""
-                    className="max-w-full rounded-lg object-cover shadow-sm shadow-black"
-                  />
+                  <div className="relative">
+                    <Image
+                      placeholder="blur"
+                      blurDataURL={imagePlaceholder.blurDataURL}
+                      width={1024}
+                      height={768}
+                      src={`data:image/png;base64,${generatedImage.image.b64_json}`}
+                      alt=""
+                      className="max-w-full rounded-lg object-cover shadow-sm shadow-black"
+                    />
+                    {iterativeMode && generatedImage.image.seed !== undefined && (
+                      <div className="absolute bottom-1 right-1 bg-black/70 text-white px-2 py-0.5 rounded-full text-xs">
+                        #{i + 1} • {generatedImage.image.seed}
+                      </div>
+                    )}
+                  </div>
                 </button>
               ))}
             </div>
